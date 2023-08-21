@@ -25,4 +25,7 @@ jobs:
   - pwsh: |
       $buildNumber = git rev-list --parents HEAD --count --full-history
       write-host $buildNumber
+      git branch
+      git log
+      
     displayName: 'Build Installer'
