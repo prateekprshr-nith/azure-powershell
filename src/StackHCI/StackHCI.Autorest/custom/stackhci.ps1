@@ -700,10 +700,6 @@ $registerArcScript = {
 
         $DebugPreference = 'Continue'
 
-        # Cache for Azure Environment within this script block to avoid redundant lookups
-        $script:cachedAzEnvironment = $null
-        $script:cachedEnvironmentName = $null
-
         $getManagementUrlScript = {
             param (
                 [parameter(Mandatory=$true)]
@@ -727,24 +723,14 @@ $registerArcScript = {
             }
             else
             {
-                # Check if we've already looked up this environment
-                if ($script:cachedEnvironmentName -eq $EnvironmentName -and $null -ne $script:cachedAzEnvironment)
+                $azEnv = Get-AzEnvironment -Name $EnvironmentName
+                if ($null -ne $azEnv)
                 {
-                    $managementUrl = $script:cachedAzEnvironment.ResourceManagerUrl
+                    $managementUrl = $azEnv.ResourceManagerUrl
                 }
                 else
                 {
-                    $azEnv = Get-AzEnvironment -Name $EnvironmentName
-                    if ($null -ne $azEnv)
-                    {
-                        $script:cachedAzEnvironment = $azEnv
-                        $script:cachedEnvironmentName = $EnvironmentName
-                        $managementUrl = $azEnv.ResourceManagerUrl
-                    }
-                    else
-                    {
-                        throw 'Invalid Azure Environment name'
-                    }
+                    throw 'Invalid Azure Environment name'
                 }
             }
 
@@ -1020,30 +1006,6 @@ function Show-LatestModuleVersion{
     }
 }
 
-# Global cache for Azure Environment objects to avoid redundant Get-AzEnvironment calls
-$script:AzEnvironmentCache = @{}
-
-function Get-CachedAzEnvironment {
-    [Microsoft.Azure.PowerShell.Cmdlets.StackHCI.DoNotExportAttribute()]
-    param (
-        [parameter(Mandatory=$true)]
-        [string] $EnvironmentName
-    )
-    
-    # Check if environment is already cached
-    if ($script:AzEnvironmentCache.ContainsKey($EnvironmentName)) {
-        return $script:AzEnvironmentCache[$EnvironmentName]
-    }
-    
-    # Fetch environment and cache it
-    $environment = Get-AzEnvironment -Name $EnvironmentName
-    if ($null -ne $environment) {
-        $script:AzEnvironmentCache[$EnvironmentName] = $environment
-    }
-    
-    return $environment
-}
-
 function Get-ManagementUrl {
     [Microsoft.Azure.PowerShell.Cmdlets.StackHCI.DoNotExportAttribute()]
     param (
@@ -1068,7 +1030,7 @@ function Get-ManagementUrl {
     }
     else
     {
-        $azEnv = Get-CachedAzEnvironment -EnvironmentName $EnvironmentName
+        $azEnv = Get-AzEnvironment -Name $EnvironmentName
         if ($null -ne $azEnv)
         {
             $managementUrl = $azEnv.ResourceManagerUrl
@@ -1266,7 +1228,7 @@ param(
     }
     else
     {
-        $azEnv = Get-CachedAzEnvironment -EnvironmentName $EnvironmentName
+        $azEnv = Get-AzEnvironment -Name $EnvironmentName
         if ($null -ne $azEnv)
         {
             return $azEnv.ManagementPortalUrl
@@ -1386,7 +1348,7 @@ param(
     }
     else
     {
-        $azEnv = Get-CachedAzEnvironment -EnvironmentName $EnvironmentName
+        $azEnv = Get-AzEnvironment -Name $EnvironmentName
         if ($null -ne $azEnv)
         {
             # Use a dummy URL for custom Az environments. The Stack HCI service endpoint is not
