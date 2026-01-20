@@ -210,6 +210,8 @@ $AuthorityAzureLocal = "https://login.$DOMAINFQDNMACRO"
 $BillingServiceApiScopeAzureLocal = "https://dp.aszrp.$DOMAINFQDNMACRO/.default"
 $GraphServiceApiScopeAzureLocal = "https://graph.$DOMAINFQDNMACRO"
 
+$DefaultBillingServiceApiScope = "$UsageServiceFirstPartyAppId/.default"
+
 $RPAPIVersion = "2025-09-15-preview";
 $HCIArcAPIVersion = "2025-09-15-preview"
 $HCIArcExtensionAPIVersion = "2025-09-15-preview"
@@ -698,6 +700,10 @@ $registerArcScript = {
 
         $DebugPreference = 'Continue'
 
+        # Cache for Azure Environment within this script block to avoid redundant lookups
+        $script:cachedAzEnvironment = $null
+        $script:cachedEnvironmentName = $null
+
         $getManagementUrlScript = {
             param (
                 [parameter(Mandatory=$true)]
@@ -721,7 +727,25 @@ $registerArcScript = {
             }
             else
             {
-                throw 'Invalid Azure Environment name'
+                # Check if we've already looked up this environment
+                if ($script:cachedEnvironmentName -eq $EnvironmentName -and $null -ne $script:cachedAzEnvironment)
+                {
+                    $managementUrl = $script:cachedAzEnvironment.ResourceManagerUrl
+                }
+                else
+                {
+                    $azEnv = Get-AzEnvironment -Name $EnvironmentName
+                    if ($null -ne $azEnv)
+                    {
+                        $script:cachedAzEnvironment = $azEnv
+                        $script:cachedEnvironmentName = $EnvironmentName
+                        $managementUrl = $azEnv.ResourceManagerUrl
+                    }
+                    else
+                    {
+                        throw 'Invalid Azure Environment name'
+                    }
+                }
             }
 
             return $managementUrl
@@ -996,6 +1020,30 @@ function Show-LatestModuleVersion{
     }
 }
 
+# Global cache for Azure Environment objects to avoid redundant Get-AzEnvironment calls
+$script:AzEnvironmentCache = @{}
+
+function Get-CachedAzEnvironment {
+    [Microsoft.Azure.PowerShell.Cmdlets.StackHCI.DoNotExportAttribute()]
+    param (
+        [parameter(Mandatory=$true)]
+        [string] $EnvironmentName
+    )
+    
+    # Check if environment is already cached
+    if ($script:AzEnvironmentCache.ContainsKey($EnvironmentName)) {
+        return $script:AzEnvironmentCache[$EnvironmentName]
+    }
+    
+    # Fetch environment and cache it
+    $environment = Get-AzEnvironment -Name $EnvironmentName
+    if ($null -ne $environment) {
+        $script:AzEnvironmentCache[$EnvironmentName] = $environment
+    }
+    
+    return $environment
+}
+
 function Get-ManagementUrl {
     [Microsoft.Azure.PowerShell.Cmdlets.StackHCI.DoNotExportAttribute()]
     param (
@@ -1020,7 +1068,15 @@ function Get-ManagementUrl {
     }
     else
     {
-        throw "Invalid Azure Environment name"
+        $azEnv = Get-CachedAzEnvironment -EnvironmentName $EnvironmentName
+        if ($null -ne $azEnv)
+        {
+            $managementUrl = $azEnv.ResourceManagerUrl
+        }
+        else
+        {
+            throw "Invalid Azure Environment name"
+        }
     }
 
     return $managementUrl
@@ -1208,6 +1264,14 @@ param(
     {
         return $AzureLocalPortalDomain;
     }
+    else
+    {
+        $azEnv = Get-CachedAzEnvironment -EnvironmentName $EnvironmentName
+        if ($null -ne $azEnv)
+        {
+            return $azEnv.ManagementPortalUrl
+        }
+    }
 }
 
 function Get-DefaultRegion{
@@ -1319,6 +1383,20 @@ param(
         $Authority.Value = $AuthorityAzureLocal
         $BillingServiceApiScope.Value = $BillingServiceApiScopeAzureLocal
         $GraphServiceApiScope.Value = $GraphServiceApiScopeAzureLocal
+    }
+    else
+    {
+        $azEnv = Get-CachedAzEnvironment -EnvironmentName $EnvironmentName
+        if ($null -ne $azEnv)
+        {
+            # Use a dummy URL for custom Az environments. The Stack HCI service endpoint is not
+            # resolved from this value in this code path; only the authority and scopes taken
+            # from Get-AzEnvironment are used for authentication, so the exact URL does not matter.
+            $ServiceEndpoint.Value = "https://doesnotmatter/"
+            $Authority.Value = $azEnv.ActiveDirectoryAuthority
+            $BillingServiceApiScope.Value = $DefaultBillingServiceApiScope
+            $GraphServiceApiScope.Value = $azEnv.GraphEndpointResourceId + "/.default"
+        }
     }
 }
 

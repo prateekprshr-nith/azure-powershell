@@ -19,6 +19,9 @@
 -->
 ## Upcoming Release
 * Improved cloud deployment detection during Azure Arc repair operations to prevent duplicate enablement attempts and ensure smoother deployment experiences.
+* Added support for custom Azure Environments configured via Add-AzEnvironment
+    - Stack HCI registration now works with custom Azure cloud environments
+    - Optimized environment endpoint retrieval to avoid redundant API calls
 
 ## Version 2.6.5
 * ARC Enablement of Nodes Before Triggering Registration in New Registration Flow.
